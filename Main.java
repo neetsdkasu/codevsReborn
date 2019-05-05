@@ -196,7 +196,7 @@ class Bomb implements Skill {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.1.0";
+    static final String VERSION = "v0.2.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
@@ -218,18 +218,22 @@ class MyAI implements AI {
             return Bomb.BOMB;
         }
 
-        int bestX = 0;
-        int bestY = 0;
-        for (int x = 0; x <= 8; ++x) {
+        int[] ys = new int[Field.WIDTH];
+        for (int x = 0; x < Field.WIDTH; ++x) {
             for (int y = Field.HEIGHT - 1; y > 0; --y) {
                 if (field.isEmpty(y, x)) {
-                    err.printf("%d %d%n", y, x);
-                    if (y > bestY) {
-                        bestX = x;
-                        bestY = y;
-                    }
+                    ys[x] = y;
                     break;
                 }
+            }
+        }
+        int bestX = 0;
+        int bestY = 0;
+        for (int x = 0; x <= 8; x++) {
+            int y = Math.min(ys[x], ys[x + 1]);
+            if (y > bestY) {
+                bestX = x;
+                bestY = y;
             }
         }
 
