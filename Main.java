@@ -89,7 +89,11 @@ class Field {
         for (int i = 0; i < HEIGHT; ++i) {
             String[] columns = in.readLine().split(" ");
             for (int j = 0; j < WIDTH; ++j) {
-                field.cell[(i + OFF_Y) * WIDTH_EX + (j + OFF_X)] = Integer.parseInt(columns[j]);
+                int b = Integer.parseInt(columns[j]);
+                field.cell[(i + OFF_Y) * WIDTH_EX + (j + OFF_X)] = b;
+                if (b == 5) {
+                    field.fives++;
+                }
             }
         }
         for (int i = 0; i < WIDTH_EX; i++) {
@@ -110,6 +114,7 @@ class Field {
     static final int OFF_Y = 3;
 
     int[] cell = new int[WIDTH_EX * HEIGHT_EX];
+    int fives = 0;
 
     private Field() {}
 
@@ -119,6 +124,10 @@ class Field {
 
     boolean isEmpty(int y, int x) {
         return get(y, x) == EMPTY_CELL;
+    }
+
+    boolean containsFive() {
+        return fives > 0;
     }
 }
 
@@ -188,13 +197,7 @@ class Bomb implements Skill {
         if (state.gauge < REQUIRE_GAUGE) {
             return false;
         }
-        int count = 0;
-        for (int c : state.field.cell) {
-            if (c == 5) {
-                ++count;
-            }
-        }
-        return count > 0;
+        return state.field.containsFive();
     }
     @Override
     public String toString() {
