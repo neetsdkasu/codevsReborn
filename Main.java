@@ -89,8 +89,11 @@ class Field {
         for (int i = 0; i < HEIGHT; ++i) {
             String[] columns = in.readLine().split(" ");
             for (int j = 0; j < WIDTH; ++j) {
-                field.cell[i * WIDTH + j] = Integer.parseInt(columns[j]);
+                field.cell[(i + OFF_Y) * WIDTH_EX + (j + OFF_X)] = Integer.parseInt(columns[j]);
             }
+        }
+        for (int i = 0; i < WIDTH_EX; i++) {
+            field.cell[(HEIGHT_EX - 1) * WIDTH_EX + i] = OJAMA_CELL;
         }
         in.readLine(); // discard END
         return field;
@@ -100,13 +103,18 @@ class Field {
     static final int HEIGHT = 16;
     static final int DANGER_LINE = 17;
     static final int EMPTY_CELL = 0;
+    static final int OJAMA_CELL = 11;
+    static final int WIDTH_EX = WIDTH + 2;
+    static final int HEIGHT_EX = HEIGHT + 4;
+    static final int OFF_X = 1;
+    static final int OFF_Y = 3;
 
-    int[] cell = new int[WIDTH * HEIGHT];
+    int[] cell = new int[WIDTH_EX * HEIGHT_EX];
 
     private Field() {}
 
     int get(int y, int x) {
-        return cell[y * WIDTH + x];
+        return cell[(y + OFF_Y) * WIDTH_EX + (x + OFF_X)];
     }
 
     boolean isEmpty(int y, int x) {
@@ -196,7 +204,7 @@ class Bomb implements Skill {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.3.0";
+    static final String VERSION = "v0.4.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
