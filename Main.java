@@ -452,14 +452,58 @@ class MyAI implements AI {
         Pack pack = packs[turn.getCount()];
         State my = turn.getMyState();
 
-        Item item = getBest(turn.getCount(), my);
+        boolean skill = false;
+        int bestRot = 0;
+        int bestX = 0;
+        int bestTop = 0;
+        int bestScore = 0;
 
-        if (item == null || item.skill) {
+        if (Bomb.BOMB.canFire(my)) {
+            State tmp = my.getCopy();
+            Bomb.BOMB.fire(tmp);
+            if (tmp.stock < -50) {
+                return Bomb.BOMB;
+            }
+            skill = true;
+            Item item = getBest(turn.getCount() + 1, tmp);
+            if (item != null) {
+                tmp = item.state;
+            }
+            bestTop = tmp.field.top;
+            bestScore = tmp.score;
+        }
+
+        for (int rot = 0; rot < 4; ++rot) {
+            pack.rot = rot;
+            for (int x = 0; x <= 8; ++x) {
+                pack.pos = x;
+                State tmp = my.getCopy();
+                tmp.putPack(pack);
+                if (tmp.isGameOver()) {
+                    continue;
+                }
+                Item item = getBest(turn.getCount() + 1, tmp);
+                if (item != null) {
+                    tmp = item.state;
+                }
+                if (tmp.score > bestScore ||
+                    (tmp.score == bestScore &&
+                        tmp.field.top > bestTop)) {
+                    skill = false;
+                    bestRot = rot;
+                    bestX = x;
+                    bestTop = tmp.field.top;
+                    bestScore = tmp.score;
+                }
+            }
+        }
+
+        if (skill) {
             return Bomb.BOMB;
         }
 
-        pack.rot = item.rot;
-        pack.pos = item.pos;
+        pack.rot = bestRot;
+        pack.pos = bestX;
 
         return pack;
     }
@@ -469,13 +513,16 @@ class MyAI implements AI {
             return null;
         }
 
+        state = state.getCopy();
+        state.dropOjama();
+
         Pack pack = packs[turnCount];
 
         boolean skill = false;
         int bestRot = 0;
         int bestX = 0;
         int bestTop = 0;
-        int bestScore = 0;
+        int bestScore = -1;
         State best = state;
 
         if (Bomb.BOMB.canFire(state)) {
@@ -507,6 +554,10 @@ class MyAI implements AI {
                     best = tmp;
                 }
             }
+        }
+
+        if (bestScore < 0) {
+            return null;
         }
 
         return new Item(best, skill, bestRot, bestX);
