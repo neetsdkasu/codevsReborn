@@ -106,6 +106,10 @@ class State {
 
     int putPack(Pack pack) {
         field.putPack(pack);
+        return checkChain();
+    }
+
+    int checkChain() {
         int chain = 0;
         for (;;) {
             if (!field.erase()) {
@@ -338,7 +342,16 @@ interface Skill extends Command {
 
 class Bomb implements Skill {
     static final int REQUIRE_GAUGE = 80;
+    static final int TRIGGER = 5;
+
     static final Bomb BOMB = new Bomb();
+    static final int[] BOMB_SCORES = new int[Field.WIDTH * Field.HEIGHT + 1];
+    static {
+        for (int i = 1; i < BOMB_SCORES.length; ++i) {
+            BOMB_SCORES[i] = (int)Math.floor(25.0 * Math.pow(2.0, (double)i / 12.0));
+        }
+    }
+
     private Bomb() {}
     public boolean canFire(State state) {
         if (state.gauge < REQUIRE_GAUGE) {
@@ -346,8 +359,39 @@ class Bomb implements Skill {
         }
         return state.field.containsFive();
     }
-    public void fire(State state) {
 
+    public void fire(State state) {
+        Field field = state.field;
+        int bs = destroy(field);
+        state.stock -= bs / 2;
+        state.score += bs;
+        if (field.drop()) {
+            state.checkChain();
+        }
+    }
+
+    int destroy(Field field) {
+        int[] cell = field.cell;
+        boolean[] flag = new boolean[cell.length];
+        for (int idx = (Field.HEIGHT_EX - 1) * Field.WIDTH_EX - 2; idx > Field.WIDTH_EX; --idx) {
+            if (cell[idx] != TRIGGER) { continue; }
+            for (int dt : Field.DT) {
+                flag[idx + dt] = true;
+            }
+        }
+        field.fives = 0;
+        int count = 0;
+        for (int i = 0; i < flag.length; ++i) {
+            if (flag[i]) {
+                int c = cell[i];
+                if (c == Field.EMPTY_CELL || c == Field.OJAMA_CELL) {
+                    continue;
+                }
+                cell[i] = 0;
+                ++count;
+            }
+        }
+        return BOMB_SCORES[count];
     }
 
     @Override
@@ -358,7 +402,7 @@ class Bomb implements Skill {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.4.0";
+    static final String VERSION = "v0.5.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
@@ -376,14 +420,20 @@ class MyAI implements AI {
         State my = turn.getMyState();
         Field field = my.field;
 
-        if (Bomb.BOMB.canFire(my)) {
-            return Bomb.BOMB;
-        }
-
+        boolean skill = false;
         int bestRot = 0;
         int bestX = 0;
         int bestTop = 0;
-        long bestScore = 0;
+        int bestScore = 0;
+
+        if (Bomb.BOMB.canFire(my)) {
+            State tmp = my.getCopy();
+            Bomb.BOMB.fire(tmp);
+            skill = true;
+            bestTop = tmp.field.top;
+            bestScore = tmp.score;
+        }
+
         for (int rot = 0; rot < 4; ++rot) {
             pack.rot = rot;
             for (int x = 0; x <= 8; ++x) {
@@ -396,12 +446,17 @@ class MyAI implements AI {
                 if (tmp.score > bestScore ||
                     (tmp.score == bestScore &&
                         tmp.field.top > bestTop)) {
+                    skill = false;
                     bestRot = rot;
                     bestX = x;
                     bestTop = tmp.field.top;
                     bestScore = tmp.score;
                 }
             }
+        }
+
+        if (skill) {
+            return Bomb.BOMB;
         }
 
         pack.rot = bestRot;
