@@ -408,6 +408,7 @@ class Bomb implements Skill {
         boolean[] flag = new boolean[cell.length];
         for (int idx = (Field.HEIGHT_EX - 1) * Field.WIDTH_EX - 2; idx > Field.WIDTH_EX; --idx) {
             if (cell[idx] != TRIGGER) { continue; }
+            flag[idx] = true;
             for (int dt : Field.DT) {
                 flag[idx + dt] = true;
             }
@@ -448,7 +449,7 @@ class Item {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.7.0";
+    static final String VERSION = "v0.8.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
