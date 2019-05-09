@@ -396,6 +396,7 @@ class Bomb implements Skill {
         Field field = state.field;
         int bs = destroy(field);
         state.stock -= bs / 2;
+        state.gauge -= REQUIRE_GAUGE;
         state.score += bs;
         if (field.drop()) {
             return state.checkChain();
@@ -449,7 +450,7 @@ class Item {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.8.0";
+    static final String VERSION = "v0.9.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
