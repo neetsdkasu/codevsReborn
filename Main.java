@@ -62,6 +62,10 @@ class Turn {
     State getMyState() {
         return states[0];
     }
+
+    State getOppnentState() {
+        return states[1];
+    }
 }
 
 class State {
@@ -72,6 +76,7 @@ class State {
         state.gauge = Integer.parseInt(in.readLine());
         state.score = Integer.parseInt(in.readLine());
         state.field = Field.scan(in);
+        state.dropOjama();
         return state;
     }
 
@@ -81,6 +86,13 @@ class State {
         for (int i = 1; i < CHAIN_SCORES.length; ++i) {
             s *= 1.3;
             CHAIN_SCORES[i] = CHAIN_SCORES[i - 1] + (int)Math.floor(s);
+        }
+    }
+
+    static final int[] GAUGE_ATTACK = new int[50];
+    static {
+        for (int i = 3; i < GAUGE_ATTACK.length; ++i) {
+            GAUGE_ATTACK[i] = 12 + 2 * i;
         }
     }
 
@@ -105,7 +117,9 @@ class State {
     }
 
     int putPack(Pack pack) {
-        field.putPack(pack);
+        if (!field.putPack(pack)) {
+            return -1;
+        }
         return checkChain();
     }
 
@@ -171,10 +185,10 @@ class Field {
     static final int EMPTY_CELL = 0;
     static final int OJAMA_CELL = 11;
     static final int WIDTH_EX = WIDTH + 2;
-    static final int HEIGHT_EX = HEIGHT + 4;
+    static final int HEIGHT_EX = HEIGHT + 5;
     static final int OFF_X = 1;
-    static final int OFF_Y = 3;
-    static final int OFF_DEAD_Y = 2;
+    static final int OFF_Y = 4;
+    static final int OFF_DEAD_Y = 3;
     static final int FIELD_SIZE = WIDTH_EX * HEIGHT_EX;
 
     static final int[] DT = {
@@ -206,12 +220,7 @@ class Field {
     }
 
     boolean isDead() {
-        for (int idx = OFF_DEAD_Y * WIDTH_EX + OFF_X, d = 0; d < WIDTH; ++d) {
-            if (cell[idx + d] != EMPTY_CELL) {
-                return true;
-            }
-        }
-        return false;
+        return top <= OFF_DEAD_Y;
     }
 
     Field getCopy() {
@@ -223,19 +232,21 @@ class Field {
         return field;
     }
 
-    void putPack(Pack pack) {
+    boolean putPack(Pack pack) {
         for (int x = 0; x < 2; ++x) {
             int idx = (HEIGHT_EX - 2) * WIDTH_EX + (pack.pos + OFF_X + x);
-            while (cell[idx] > 0) { idx -= WIDTH_EX; }
+            while (idx > 0 && cell[idx] > 0) { idx -= WIDTH_EX; }
             for (int y = 2; y >= 0; y -= 2) {
                 int n = pack.get(y + x);
                 if (n != 0) {
+                    if (idx < 0) { return false; }
                     cell[idx] = n;
                     top = Math.min(top, idx / WIDTH_EX);
                     idx -= WIDTH_EX;
                 }
             }
         }
+        return true;
     }
 
     boolean erase() {
@@ -358,7 +369,7 @@ class Pack implements Command {
 
 interface Skill extends Command {
     boolean canFire(State state);
-    void fire(State state);
+    int fire(State state);
 }
 
 class Bomb implements Skill {
@@ -381,14 +392,15 @@ class Bomb implements Skill {
         return state.field.containsFive();
     }
 
-    public void fire(State state) {
+    public int fire(State state) {
         Field field = state.field;
         int bs = destroy(field);
         state.stock -= bs / 2;
         state.score += bs;
         if (field.drop()) {
-            state.checkChain();
+            return state.checkChain();
         }
+        return 0;
     }
 
     int destroy(Field field) {
@@ -424,18 +436,19 @@ class Bomb implements Skill {
 class Item {
     State state = null;
     boolean skill = false;
-    int rot = 0, pos = 0;
-    public Item(State state, boolean skill, int rot, int pos) {
+    int rot = 0, pos = 0, attackG = 0;
+    public Item(State state, boolean skill, int rot, int pos, int attackG) {
         this.state = state;
         this.skill = skill;
         this.rot = rot;
         this.pos = pos;
+        this.attackG = attackG;
     }
 }
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.6.0";
+    static final String VERSION = "v0.7.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
@@ -452,25 +465,40 @@ class MyAI implements AI {
         Pack pack = packs[turn.getCount()];
         State my = turn.getMyState();
 
+        Item opp = getBest(turn.getCount(), turn.getOppnentState());
+        int attackS = 0, attackG = 0;
+        if (opp != null) {
+            if (opp.state.stock < 0) {
+                attackS = -opp.state.stock;
+            }
+            attackG = opp.attackG;
+        }
+
         boolean skill = false;
         int bestRot = 0;
         int bestX = 0;
         int bestTop = 0;
         int bestScore = 0;
+        State best = my;
 
         if (Bomb.BOMB.canFire(my)) {
             State tmp = my.getCopy();
             Bomb.BOMB.fire(tmp);
-            if (tmp.stock < -50) {
-                return Bomb.BOMB;
+            if (!tmp.isGameOver()) {
+                tmp.stock += attackS;
+                tmp.gauge -= attackG;
+                tmp.dropOjama();
+                Item item = getBest(turn.getCount() + 1, tmp);
+                if (item != null) {
+                    tmp = item.state;
+                }
+                if (!tmp.isGameOver()) {
+                    skill = true;
+                    bestTop = tmp.field.top;
+                    bestScore = tmp.score;
+                    best = tmp;
+                }
             }
-            skill = true;
-            Item item = getBest(turn.getCount() + 1, tmp);
-            if (item != null) {
-                tmp = item.state;
-            }
-            bestTop = tmp.field.top;
-            bestScore = tmp.score;
         }
 
         for (int rot = 0; rot < 4; ++rot) {
@@ -478,70 +506,21 @@ class MyAI implements AI {
             for (int x = 0; x <= 8; ++x) {
                 pack.pos = x;
                 State tmp = my.getCopy();
-                tmp.putPack(pack);
+                if (tmp.putPack(pack) < 0) {
+                    continue;
+                }
                 if (tmp.isGameOver()) {
                     continue;
                 }
+                tmp.stock += attackS;
+                tmp.gauge -= attackG;
+                tmp.dropOjama();
                 Item item = getBest(turn.getCount() + 1, tmp);
                 if (item != null) {
                     tmp = item.state;
-                }
-                if (tmp.score > bestScore ||
-                    (tmp.score == bestScore &&
-                        tmp.field.top > bestTop)) {
-                    skill = false;
-                    bestRot = rot;
-                    bestX = x;
-                    bestTop = tmp.field.top;
-                    bestScore = tmp.score;
-                }
-            }
-        }
-
-        if (skill) {
-            return Bomb.BOMB;
-        }
-
-        pack.rot = bestRot;
-        pack.pos = bestX;
-
-        return pack;
-    }
-
-    Item getBest(int turnCount, State state) {
-        if (turnCount >= packs.length) {
-            return null;
-        }
-
-        state = state.getCopy();
-        state.dropOjama();
-
-        Pack pack = packs[turnCount];
-
-        boolean skill = false;
-        int bestRot = 0;
-        int bestX = 0;
-        int bestTop = 0;
-        int bestScore = -1;
-        State best = state;
-
-        if (Bomb.BOMB.canFire(state)) {
-            State tmp = state.getCopy();
-            Bomb.BOMB.fire(tmp);
-            skill = true;
-            bestTop = tmp.field.top;
-            bestScore = tmp.score;
-            best = tmp;
-        }
-
-        for (int rot = 0; rot < 4; ++rot) {
-            pack.rot = rot;
-            for (int x = 0; x <= 8; ++x) {
-                pack.pos = x;
-                State tmp = state.getCopy();
-                tmp.putPack(pack);
-                if (tmp.isGameOver()) {
-                    continue;
+                    if (tmp.isGameOver()) {
+                        continue;
+                    }
                 }
                 if (tmp.score > bestScore ||
                     (tmp.score == bestScore &&
@@ -556,11 +535,85 @@ class MyAI implements AI {
             }
         }
 
+        pack.rot = bestRot;
+        pack.pos = bestX;
+
+        // printL();
+        // printL();
+        // err.println("turn: " + turn.getCount());
+        // err.println("go:" + my.isGameOver());
+        // err.println("skill: " + skill);
+        // printP(pack);
+        // printF(my.field);
+        // printL();
+        // err.println("future");
+        // printF(best.field);
+
+        if (skill) {
+            return Bomb.BOMB;
+        }
+
+        return pack;
+    }
+
+    Item getBest(int turnCount, State state) {
+        if (turnCount >= packs.length) {
+            return null;
+        }
+
+        Pack pack = packs[turnCount];
+
+        boolean skill = false;
+        int bestRot = 0;
+        int bestX = 0;
+        int bestTop = 0;
+        int bestScore = -1;
+        int bestAttackG = 0;
+        State best = state;
+
+        if (Bomb.BOMB.canFire(state)) {
+            State tmp = state.getCopy();
+            int chain = Bomb.BOMB.fire(tmp);
+            if (!tmp.isGameOver()) {
+                skill = true;
+                bestTop = tmp.field.top;
+                bestScore = tmp.score;
+                bestAttackG = State.GAUGE_ATTACK[chain];
+                best = tmp;
+            }
+        }
+
+        for (int rot = 0; rot < 4; ++rot) {
+            pack.rot = rot;
+            for (int x = 0; x <= 8; ++x) {
+                pack.pos = x;
+                State tmp = state.getCopy();
+                int chain = tmp.putPack(pack);
+                if (chain < 0) {
+                    continue;
+                }
+                if (tmp.isGameOver()) {
+                    continue;
+                }
+                if (tmp.score > bestScore ||
+                    (tmp.score == bestScore &&
+                        tmp.field.top > bestTop)) {
+                    skill = false;
+                    bestRot = rot;
+                    bestX = x;
+                    bestTop = tmp.field.top;
+                    bestScore = tmp.score;
+                    bestAttackG = State.GAUGE_ATTACK[chain];
+                    best = tmp;
+                }
+            }
+        }
+
         if (bestScore < 0) {
             return null;
         }
 
-        return new Item(best, skill, bestRot, bestX);
+        return new Item(best, skill, bestRot, bestX, bestAttackG);
     }
 
     void printP(Pack pack) {
@@ -576,7 +629,7 @@ class MyAI implements AI {
     }
 
     void printF(Field field) {
-        for (int y = 0; y < Field.HEIGHT; ++y) {
+        for (int y = -2; y < Field.HEIGHT; ++y) {
             for (int x = 0; x < Field.WIDTH; ++x) {
                 err.printf("%d ", field.get(y, x));
             }
