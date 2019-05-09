@@ -245,21 +245,6 @@ class Field {
                 int n = pack.get(y + x);
                 if (n != 0) {
                     if (idx < 0) {
-                        System.err.printf(
-                            "y: %d, x: %d, pos: %d, idx: %d%n",
-                            y, x, pack.pos, idx
-                        );
-                        idx = (HEIGHT_EX - 2) * WIDTH_EX + (pack.pos + OFF_X + x);
-                        while (idx > 0) {
-                            System.err.printf(
-                                "idx: %d, cell: %d%n",
-                                idx, cell[idx]
-                            );
-                            idx -= WIDTH_EX;
-                        }
-                        System.err.println(dead);
-                        System.err.println(tp);
-                        MyAI.printF(this);
                         return false;
                     }
                     cell[idx] = n;
@@ -492,7 +477,7 @@ class Item {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.10.0";
+    static final String VERSION = "v0.10.1";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
