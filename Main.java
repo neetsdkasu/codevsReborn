@@ -3,7 +3,10 @@
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 
 interface AI {
     String getName();
@@ -71,7 +74,7 @@ class Turn {
 class State {
     static State scan(BufferedReader in) throws Exception {
         State state = new State();
-        state.timeLeft = Long.parseLong(in.readLine());
+        state.timeLeft = Integer.parseInt(in.readLine());
         state.stock = Integer.parseInt(in.readLine());
         state.gauge = Integer.parseInt(in.readLine());
         state.score = Integer.parseInt(in.readLine());
@@ -96,7 +99,7 @@ class State {
         }
     }
 
-    long timeLeft;
+    int timeLeft;
     int stock, gauge, score;
     Field field;
 
@@ -167,7 +170,7 @@ class Field {
                 // if (b > 0 && field.tops[i] == 0) {
                     // field.tops[i] = i + OFF_Y;
                 // }
-                if (b > 0 && field.top == 0) {
+                if (b > 0 && i + OFF_Y < field.top) {
                     field.top = i + OFF_Y;
                 }
             }
@@ -176,6 +179,7 @@ class Field {
             field.cell[(HEIGHT_EX - 1) * WIDTH_EX + i] = OJAMA_CELL;
         }
         in.readLine(); // discard END
+        // field.checkTop();
         return field;
     }
 
@@ -202,7 +206,7 @@ class Field {
 
     int[] cell = new int[FIELD_SIZE];
     // int[] tops = new int[WIDTH_EX];
-    int top = 0;
+    int top = HEIGHT_EX - 1;
     int fives = 0;
 
     private Field() {}
@@ -233,19 +237,38 @@ class Field {
     }
 
     boolean putPack(Pack pack) {
+        boolean dead = isDead(); int tp = top;
         for (int x = 0; x < 2; ++x) {
             int idx = (HEIGHT_EX - 2) * WIDTH_EX + (pack.pos + OFF_X + x);
             while (idx > 0 && cell[idx] > 0) { idx -= WIDTH_EX; }
             for (int y = 2; y >= 0; y -= 2) {
                 int n = pack.get(y + x);
                 if (n != 0) {
-                    if (idx < 0) { return false; }
+                    if (idx < 0) {
+                        System.err.printf(
+                            "y: %d, x: %d, pos: %d, idx: %d%n",
+                            y, x, pack.pos, idx
+                        );
+                        idx = (HEIGHT_EX - 2) * WIDTH_EX + (pack.pos + OFF_X + x);
+                        while (idx > 0) {
+                            System.err.printf(
+                                "idx: %d, cell: %d%n",
+                                idx, cell[idx]
+                            );
+                            idx -= WIDTH_EX;
+                        }
+                        System.err.println(dead);
+                        System.err.println(tp);
+                        MyAI.printF(this);
+                        return false;
+                    }
                     cell[idx] = n;
                     top = Math.min(top, idx / WIDTH_EX);
                     idx -= WIDTH_EX;
                 }
             }
         }
+        // checkTop();
         return true;
     }
 
@@ -275,11 +298,12 @@ class Field {
 
     boolean drop() {
         boolean droped = false;
-        int top = HEIGHT_EX;
+        int tp = HEIGHT_EX - 1;
         for (int x = OFF_X; x <= WIDTH; ++x) {
-            for (int idx = (HEIGHT_EX - 2) * WIDTH_EX + x; idx >= WIDTH_EX; idx -= WIDTH_EX) {
+            int emp = -WIDTH_EX;
+            for (int idx = (HEIGHT_EX - 2) * WIDTH_EX + x; idx > 0; idx -= WIDTH_EX) {
                 if (cell[idx] != 0) { continue; }
-                int emp = idx;
+                emp = idx;
                 for (idx -= WIDTH_EX; idx > 0; idx -= WIDTH_EX) {
                     if (cell[idx] == 0) { continue; }
                     cell[emp] = cell[idx];
@@ -287,11 +311,12 @@ class Field {
                     emp -= WIDTH_EX;
                     droped = true;
                 }
-                top = Math.min(top, emp / WIDTH_EX + 1);
                 break;
             }
+            tp = Math.min(tp, (emp + WIDTH_EX) / WIDTH_EX);
         }
-        this.top = top;
+        this.top = tp;
+        // checkTop();
         return droped;
     }
 
@@ -303,6 +328,23 @@ class Field {
                 }
                 cell[idx] = OJAMA_CELL;
                 top = Math.min(top, idx / WIDTH_EX);
+                break;
+            }
+        }
+        // checkTop();
+    }
+
+    void _checkTop() {
+        // System.err.println("CheckTop");
+        for (int idx = 0; idx < cell.length; ++idx) {
+            if (cell[idx] > 0) {
+                int h = idx / WIDTH_EX;
+                if (h != top) {
+                    MyAI.printF(this);
+                    throw new RuntimeException(
+                        String.format("top: %d, h: %d", top, h)
+                    );
+                }
                 break;
             }
         }
@@ -438,22 +480,24 @@ class Bomb implements Skill {
 class Item {
     State state = null;
     boolean skill = false;
-    int rot = 0, pos = 0, attackG = 0;
-    public Item(State state, boolean skill, int rot, int pos, int attackG) {
+    int rot = 0, pos = 0, chain = 0;
+    public Item(State state, boolean skill, int rot, int pos, int chain) {
         this.state = state;
         this.skill = skill;
         this.rot = rot;
         this.pos = pos;
-        this.attackG = attackG;
+        this.chain = chain;
     }
 }
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.9.0";
+    static final String VERSION = "v0.10.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
+
+    static final Random rand = new Random(19831983L);
 
     public String getName() { return NAME + VERSION; }
 
@@ -464,6 +508,14 @@ class MyAI implements AI {
     }
 
     public Command getCommand(Turn turn) throws Exception {
+        if (turn.getMyState().timeLeft < Math.max(60 * (500 - turn.getCount()), 20000)) {
+            return quick(turn);
+        } else {
+            return search(turn);
+        }
+    }
+
+    Command quick(Turn turn) {
         Pack pack = packs[turn.getCount()];
         State my = turn.getMyState();
 
@@ -473,7 +525,7 @@ class MyAI implements AI {
             if (opp.state.stock < 0) {
                 attackS = -opp.state.stock;
             }
-            attackG = opp.attackG;
+            attackG = State.GAUGE_ATTACK[opp.chain];
         }
 
         boolean skill = false;
@@ -570,7 +622,7 @@ class MyAI implements AI {
         int bestX = 0;
         int bestTop = 0;
         int bestScore = -1;
-        int bestAttackG = 0;
+        int bestChain = 0;
         State best = state;
 
         if (Bomb.BOMB.canFire(state)) {
@@ -580,7 +632,7 @@ class MyAI implements AI {
                 skill = true;
                 bestTop = tmp.field.top;
                 bestScore = tmp.score;
-                bestAttackG = State.GAUGE_ATTACK[chain];
+                bestChain = chain;
                 best = tmp;
             }
         }
@@ -605,7 +657,7 @@ class MyAI implements AI {
                     bestX = x;
                     bestTop = tmp.field.top;
                     bestScore = tmp.score;
-                    bestAttackG = State.GAUGE_ATTACK[chain];
+                    bestChain = chain;
                     best = tmp;
                 }
             }
@@ -615,10 +667,10 @@ class MyAI implements AI {
             return null;
         }
 
-        return new Item(best, skill, bestRot, bestX, bestAttackG);
+        return new Item(best, skill, bestRot, bestX, bestChain);
     }
 
-    void printP(Pack pack) {
+    static void printP(Pack pack) {
         for (int y = 0; y < Pack.SIZE; ++y) {
             for (int x = 0; x < pack.pos; ++x) {
                 err.print("  ");
@@ -630,7 +682,7 @@ class MyAI implements AI {
         }
     }
 
-    void printF(Field field) {
+    static void printF(Field field) {
         for (int y = -2; y < Field.HEIGHT; ++y) {
             for (int x = 0; x < Field.WIDTH; ++x) {
                 err.printf("%d ", field.get(y, x));
@@ -639,9 +691,123 @@ class MyAI implements AI {
         }
     }
 
-    void printL() {
+    static void printL() {
         err.println("---------------");
     }
 
+    Command search(Turn turn) {
+        int tc = turn.getCount();
+        Pack pack = packs[tc];
+        State my = turn.getMyState();
+
+        // printL();
+        // err.printf("turn: %d%n", tc);
+        // printP(pack);
+        // printF(my.field);
+
+        Item opp = getBest(turn.getCount(), turn.getOppnentState());
+        int attackS = 0, attackG = 0;
+        if (opp != null) {
+            if (opp.state.stock < 0) {
+                attackS = -opp.state.stock;
+            }
+            attackG = State.GAUGE_ATTACK[opp.chain];
+        }
+
+        List<Item> list = new ArrayList<>(37);
+
+        if (Bomb.BOMB.canFire(my)) {
+            State tmp = my.getCopy();
+            int chain = Bomb.BOMB.fire(tmp);
+            if (!tmp.isGameOver()) {
+                tmp.stock += attackS;
+                tmp.gauge -= attackG;
+                tmp.dropOjama();
+                list.add(new Item(tmp, true, 0, 0, chain));
+            }
+        }
+
+        for (int rot = 0; rot < 4; ++rot) {
+            pack.rot = rot;
+            for (int x = 0; x <= 8; ++x) {
+                pack.pos = x;
+                State tmp = my.getCopy();
+                int chain = tmp.putPack(pack);
+                if (chain < 0) {
+                    continue;
+                }
+                if (tmp.isGameOver()) {
+                    continue;
+                }
+                tmp.stock += attackS;
+                tmp.gauge -= attackG;
+                tmp.dropOjama();
+                list.add(new Item(tmp, false, rot, x, chain));
+            }
+        }
+
+        if (list.isEmpty()) {
+            // game over ?
+            if (my.isGameOver()) {
+                err.println("GAME OVER");
+            } else {
+                err.println("WHAT?");
+            }
+            return pack;
+        }
+
+        Item[] items = list.toArray(new Item[list.size()]);
+
+        int[] scores = new int[items.length];
+
+        int et = Math.min(tc + 8, 500);
+
+        for (int k = 0; k < 100; ++k) {
+            for (int sel = 0; sel < items.length; ++sel) {
+                State tmp = items[sel].state.getCopy();
+                int chain = 0;
+                for (int j = tc + 1; j < et; ++j) {
+                    int e;
+                    if (Bomb.BOMB.canFire(tmp)) {
+                        e = rand.nextInt(37);
+                    } else {
+                        e = rand.nextInt(36);
+                    }
+                    if (e == 36) {
+                        chain = Math.max(chain, Bomb.BOMB.fire(tmp));
+                    } else {
+                        Pack pk = packs[j];
+                        pk.rot = e & 3;
+                        pk.pos = e >> 2;
+                        chain = Math.max(chain, tmp.putPack(pk));
+                    }
+                    if (tmp.isGameOver()) {
+                        tmp.score = 0;
+                        break;
+                    }
+                    tmp.stock += rand.nextInt(10) * rand.nextInt(10) / 10 * 4;
+                    tmp.gauge -= rand.nextInt(10) * rand.nextInt(10) / 10;
+                    tmp.dropOjama();
+                }
+                scores[sel] = Math.max(scores[sel], tmp.score);
+            }
+        }
+
+        int best = 0;
+        for (int i = 1; i < scores.length; ++i) {
+            if (scores[i] > scores[best]) {
+                best = i;
+            }
+        }
+
+        if (items[best].skill) {
+            return Bomb.BOMB;
+        }
+
+        pack.rot = items[best].rot;
+        pack.pos = items[best].pos;
+
+        return pack;
+    }
 }
 
