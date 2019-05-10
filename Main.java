@@ -489,7 +489,7 @@ enum Style {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.12.0";
+    static final String VERSION = "v0.12.1";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
@@ -835,7 +835,7 @@ class MyAI implements AI {
         for (int k = 0; k < 100; ++k) {
             for (int sel = 0; sel < items.length; ++sel) {
                 State tmp = items[sel].state.getCopy();
-                int chain = 0;
+                int chain = items[sel].chain;
                 for (int j = tc + 1; j < et; ++j) {
                     int e;
                     if (Bomb.BOMB.canFire(tmp)) {
