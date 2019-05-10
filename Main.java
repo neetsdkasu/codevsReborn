@@ -483,28 +483,48 @@ class Item implements Command {
     }
 }
 
+enum Style {
+    NONE, BOMB, CHAIN
+}
+
 class MyAI implements AI {
 
-    static final String VERSION = "v0.11.0";
+    static final String VERSION = "v0.12.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
 
-    static final Random rand = new Random(19831983L);
+    static final Random rand = new Random(System.nanoTime());
 
     public String getName() { return NAME + VERSION; }
 
     Pack[] packs = null;
 
+    Style style = Style.NONE, oppStyle = Style.NONE;
+
     public void init(Pack[] packs) throws Exception {
         this.packs = packs;
+        for (int i = 0; i < 10; ++i) {
+            if (rand.nextInt(1000) < 150) {
+                if (rand.nextInt(1000) < 950) {
+                    style = Style.BOMB;
+                } else {
+                    style = Style.CHAIN;
+                }
+            } else {
+                style = Style.NONE;
+            }
+        }
+        err.println("my style: " + style.toString());
     }
 
     public Command getCommand(Turn turn) throws Exception {
         if (turn.getMyState().timeLeft < Math.max(60 * (500 - turn.getCount()), 20000)) {
             return quick(turn);
-        } else {
+        } else if (style != Style.NONE) {
             return search(turn);
+        } else {
+            return quick(turn);
         }
     }
 
@@ -519,6 +539,7 @@ class MyAI implements AI {
                 attackS = -opp.state.stock;
             }
             attackG = State.GAUGE_ATTACK[opp.chain];
+            guessOppStyle(opp);
         }
 
         boolean skill = false;
@@ -642,6 +663,7 @@ class MyAI implements AI {
                 if (tmp.isGameOver()) {
                     continue;
                 }
+                bestChain = Math.max(bestChain, chain);
                 if (tmp.score > bestScore ||
                     (tmp.score == bestScore &&
                         tmp.field.top > bestTop)) {
@@ -650,7 +672,6 @@ class MyAI implements AI {
                     bestX = x;
                     bestTop = tmp.field.top;
                     bestScore = tmp.score;
-                    bestChain = chain;
                     best = tmp;
                 }
             }
@@ -688,7 +709,21 @@ class MyAI implements AI {
         err.println("---------------");
     }
 
-    Command search(Turn turn) {
+    void guessOppStyle(Item opp) {
+        if (opp.state.stock < -30) {
+            Style old = oppStyle;
+            if (opp.chain > 7 || opp.state.gauge > 20) {
+                oppStyle = Style.CHAIN;
+            } else {
+                oppStyle = Style.BOMB;
+            }
+            if (old != oppStyle) {
+                err.println("opp style: " + oppStyle.toString());
+            }
+        }
+    }
+
+    Command search(Turn turn) { // OMG!! some bugs exist...
         int tc = turn.getCount();
         Pack pack = packs[tc];
         State my = turn.getMyState();
@@ -705,14 +740,15 @@ class MyAI implements AI {
                 attackS = -opp.state.stock;
             }
             attackG = State.GAUGE_ATTACK[opp.chain];
+            guessOppStyle(opp);
         }
 
         List<Item> list = new ArrayList<>(37);
 
-        if (Bomb.BOMB.canFire(my) && (my.isGameOver() || my.stock > 100)) {
+        if (Bomb.BOMB.canFire(my) && (style == Style.BOMB || my.isGameOver() || my.stock > 100)) {
             State tmp = my.getCopy();
             int chain = Bomb.BOMB.fire(tmp);
-            if (!tmp.isGameOver() && (my.isGameOver() || tmp.stock < 100)) {
+            if (!tmp.isGameOver() && (style == Style.BOMB || my.isGameOver() || tmp.stock < 100)) {
                 tmp.stock += attackS;
                 tmp.gauge -= attackG;
                 tmp.dropOjama();
@@ -753,6 +789,23 @@ class MyAI implements AI {
 
         int[] scores = new int[items.length];
 
+        if (style == Style.BOMB) {
+            bombStyleSearch(tc, items, scores);
+        } else {
+            chainStyleSearch(tc, items, scores);
+        }
+
+        int best = 0;
+        for (int i = 1; i < scores.length; ++i) {
+            if (scores[i] > scores[best]) {
+                best = i;
+            }
+        }
+
+        return items[best];
+    }
+
+    void chainStyleSearch(int tc, Item[] items, int[] scores) {
         int et = Math.min(tc + 8, 500);
 
         for (int k = 0; k < 500; ++k) {
@@ -774,15 +827,41 @@ class MyAI implements AI {
                 scores[sel] = Math.max(scores[sel], tmp.score * (chain + 1) / 3);
             }
         }
+    }
 
-        int best = 0;
-        for (int i = 1; i < scores.length; ++i) {
-            if (scores[i] > scores[best]) {
-                best = i;
+    void bombStyleSearch(int tc, Item[] items, int[] scores) {
+        int et = Math.min(tc + 8, 500);
+
+        for (int k = 0; k < 100; ++k) {
+            for (int sel = 0; sel < items.length; ++sel) {
+                State tmp = items[sel].state.getCopy();
+                int chain = 0;
+                for (int j = tc + 1; j < et; ++j) {
+                    int e;
+                    if (Bomb.BOMB.canFire(tmp)) {
+                        e = rand.nextInt(37);
+                    } else {
+                        e = rand.nextInt(36);
+                    }
+                    if (e == 36) {
+                        chain = Math.max(chain, Bomb.BOMB.fire(tmp));
+                    } else {
+                        Pack pk = packs[j];
+                        pk.rot = e & 3;
+                        pk.pos = e >> 2;
+                        chain = Math.max(chain, tmp.putPack(pk));
+                    }
+                    if (tmp.isGameOver()) {
+                        tmp.score = 0;
+                        break;
+                    }
+                    tmp.stock += rand.nextInt(10) * rand.nextInt(10) / 10 * 4;
+                    tmp.gauge -= rand.nextInt(10) * rand.nextInt(10) / 10;
+                    tmp.dropOjama();
+                }
+                scores[sel] = Math.max(scores[sel], tmp.score);
             }
         }
-
-        return items[best];
     }
 }
 
