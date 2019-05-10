@@ -462,7 +462,7 @@ class Bomb implements Skill {
     }
 }
 
-class Item {
+class Item implements Command {
     State state = null;
     boolean skill = false;
     int rot = 0, pos = 0, chain = 0;
@@ -473,11 +473,19 @@ class Item {
         this.pos = pos;
         this.chain = chain;
     }
+    @Override
+    public String toString() {
+        if (skill) {
+            return Bomb.BOMB.toString();
+        } else {
+            return String.format("%d %d", rot, pos);
+        }
+    }
 }
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.10.1";
+    static final String VERSION = "v0.11.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
@@ -701,10 +709,10 @@ class MyAI implements AI {
 
         List<Item> list = new ArrayList<>(37);
 
-        if (Bomb.BOMB.canFire(my)) {
+        if (Bomb.BOMB.canFire(my) && (my.isGameOver() || my.stock > 100)) {
             State tmp = my.getCopy();
             int chain = Bomb.BOMB.fire(tmp);
-            if (!tmp.isGameOver()) {
+            if (!tmp.isGameOver() && (my.isGameOver() || tmp.stock < 100)) {
                 tmp.stock += attackS;
                 tmp.gauge -= attackG;
                 tmp.dropOjama();
@@ -747,34 +755,23 @@ class MyAI implements AI {
 
         int et = Math.min(tc + 8, 500);
 
-        for (int k = 0; k < 100; ++k) {
+        for (int k = 0; k < 500; ++k) {
             for (int sel = 0; sel < items.length; ++sel) {
                 State tmp = items[sel].state.getCopy();
-                int chain = 0;
+                int chain = items[sel].chain;
                 for (int j = tc + 1; j < et; ++j) {
-                    int e;
-                    if (Bomb.BOMB.canFire(tmp)) {
-                        e = rand.nextInt(37);
-                    } else {
-                        e = rand.nextInt(36);
-                    }
-                    if (e == 36) {
-                        chain = Math.max(chain, Bomb.BOMB.fire(tmp));
-                    } else {
-                        Pack pk = packs[j];
-                        pk.rot = e & 3;
-                        pk.pos = e >> 2;
-                        chain = Math.max(chain, tmp.putPack(pk));
-                    }
+                    int e = rand.nextInt(36);
+                    Pack pk = packs[j];
+                    pk.rot = e & 3;
+                    pk.pos = e >> 2;
+                    chain = Math.max(chain, tmp.putPack(pk));
                     if (tmp.isGameOver()) {
                         tmp.score = 0;
                         break;
                     }
-                    tmp.stock += rand.nextInt(10) * rand.nextInt(10) / 10 * 4;
-                    tmp.gauge -= rand.nextInt(10) * rand.nextInt(10) / 10;
                     tmp.dropOjama();
                 }
-                scores[sel] = Math.max(scores[sel], tmp.score);
+                scores[sel] = Math.max(scores[sel], tmp.score * (chain + 1) / 3);
             }
         }
 
@@ -785,14 +782,7 @@ class MyAI implements AI {
             }
         }
 
-        if (items[best].skill) {
-            return Bomb.BOMB;
-        }
-
-        pack.rot = items[best].rot;
-        pack.pos = items[best].pos;
-
-        return pack;
+        return items[best];
     }
 }
 
