@@ -489,7 +489,7 @@ enum Style {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.12.2";
+    static final String VERSION = "v0.13.0";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
@@ -505,8 +505,8 @@ class MyAI implements AI {
     public void init(Pack[] packs) throws Exception {
         this.packs = packs;
         for (int i = 0; i < 10; ++i) {
-            if (rand.nextInt(1000) < 150) {
-                if (rand.nextInt(1000) < 950) {
+            if (rand.nextInt(1000) < 200) {
+                if (rand.nextInt(1000) < 700) {
                     style = Style.BOMB;
                 } else {
                     style = Style.CHAIN;
