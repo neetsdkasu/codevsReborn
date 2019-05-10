@@ -478,7 +478,7 @@ class Item implements Command {
         if (skill) {
             return Bomb.BOMB.toString();
         } else {
-            return String.format("%d %d", rot, pos);
+            return String.format("%d %d", pos, rot);
         }
     }
 }
