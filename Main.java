@@ -489,7 +489,7 @@ enum Style {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.12.1";
+    static final String VERSION = "v0.12.2";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
@@ -762,10 +762,7 @@ class MyAI implements AI {
                 pack.pos = x;
                 State tmp = my.getCopy();
                 int chain = tmp.putPack(pack);
-                if (chain < 0) {
-                    continue;
-                }
-                if (tmp.isGameOver()) {
+                if (tmp.isGameOver() || chain < 0) {
                     continue;
                 }
                 tmp.stock += attackS;
@@ -801,7 +798,7 @@ class MyAI implements AI {
                 best = i;
             }
         }
-
+        
         return items[best];
     }
 
@@ -817,11 +814,12 @@ class MyAI implements AI {
                     Pack pk = packs[j];
                     pk.rot = e & 3;
                     pk.pos = e >> 2;
-                    chain = Math.max(chain, tmp.putPack(pk));
-                    if (tmp.isGameOver()) {
+                    int tmpChain = tmp.putPack(pk);
+                    if (tmp.isGameOver() || tmpChain < 0) {
                         tmp.score = 0;
                         break;
                     }
+                    chain = Math.max(chain, tmpChain);
                     tmp.dropOjama();
                 }
                 scores[sel] = Math.max(scores[sel], tmp.score * (chain + 1) / 3);
@@ -843,18 +841,20 @@ class MyAI implements AI {
                     } else {
                         e = rand.nextInt(36);
                     }
+                    int tmpChain;
                     if (e == 36) {
-                        chain = Math.max(chain, Bomb.BOMB.fire(tmp));
+                        tmpChain = Bomb.BOMB.fire(tmp);
                     } else {
                         Pack pk = packs[j];
                         pk.rot = e & 3;
                         pk.pos = e >> 2;
-                        chain = Math.max(chain, tmp.putPack(pk));
+                        tmpChain = tmp.putPack(pk);
                     }
-                    if (tmp.isGameOver()) {
+                    if (tmp.isGameOver() || tmpChain < 0) {
                         tmp.score = 0;
                         break;
                     }
+                    chain = Math.max(chain, tmpChain);
                     tmp.stock += rand.nextInt(10) * rand.nextInt(10) / 10 * 4;
                     tmp.gauge -= rand.nextInt(10) * rand.nextInt(10) / 10;
                     tmp.dropOjama();
