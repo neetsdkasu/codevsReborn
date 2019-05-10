@@ -485,7 +485,7 @@ class Item implements Command {
 
 class MyAI implements AI {
 
-    static final String VERSION = "v0.11.0";
+    static final String VERSION = "v0.11.1";
     static final String NAME = "LeonardoneAI";
 
     static final PrintStream err = System.err;
